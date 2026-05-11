@@ -9,7 +9,7 @@ services:
       - "3100:3100"
     volumes:
       - ./loki/config.yml:/etc/loki/config.yml:ro
-      - loki_data:/loki
+      - ${LOKI_DATA_PATH:-./data/loki}:/loki
     restart: unless-stopped
     healthcheck:
       test:
@@ -42,7 +42,7 @@ services:
     volumes:
       - ./grafana/grafana.ini:/etc/grafana/grafana.ini:ro
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - grafana_data:/var/lib/grafana
+      - ${GRAFANA_DATA_PATH:-./data/grafana}:/var/lib/grafana
     restart: unless-stopped
     healthcheck:
       test:
@@ -56,10 +56,6 @@ services:
       start_period: 30s
     networks:
       - monitoring
-
-volumes:
-  grafana_data:
-  loki_data:
 
 networks:
   monitoring:
