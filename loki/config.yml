@@ -18,6 +18,7 @@ common:
 
 schema_config:
   configs:
+    # Keep the schema start in the past so new and existing data index consistently.
     - from: 2024-01-01
       store: tsdb
       object_store: filesystem
