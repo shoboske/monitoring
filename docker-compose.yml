@@ -1,0 +1,62 @@
+name: monitoring-stack
+
+services:
+  loki:
+    image: grafana/loki:3.7.1
+    container_name: loki
+    command: -config.file=/etc/loki/config.yml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki/config.yml:/etc/loki/config.yml:ro
+      - ${LOKI_DATA_PATH:-./data/loki}:/loki
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "if command -v wget >/dev/null 2>&1; then wget -q -O- http://127.0.0.1:3100/ready > /dev/null; else curl -fsS http://127.0.0.1:3100/ready > /dev/null; fi",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:13.0.1
+    container_name: grafana
+    depends_on:
+      loki:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      GRAFANA_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GRAFANA_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+      GITHUB_ALLOWED_ORG: ${GITHUB_ALLOWED_ORG}
+      GRAFANA_ROOT_URL: ${GRAFANA_ROOT_URL}
+    volumes:
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ${GRAFANA_DATA_PATH:-./data/grafana}:/var/lib/grafana
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "if command -v wget >/dev/null 2>&1; then wget -q -O- http://127.0.0.1:3000/api/health > /dev/null; else curl -fsS http://127.0.0.1:3000/api/health > /dev/null; fi",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    driver: bridge
