@@ -1,79 +1,84 @@
 logging {
-  level  = "info"
-  format = "logfmt"
+  level = "info"
 }
 
-############################
-# Docker logs
-############################
+// Docker containers
 discovery.docker "containers" {
   host = "unix:///var/run/docker.sock"
 }
 
-loki.source.docker "docker_logs" {
-  host       = "unix:///var/run/docker.sock"
-  targets    = discovery.docker.containers.targets
-  forward_to = [loki.write.local.receiver]
-
-  labels = {
-    job = "docker"
-  }
-}
-
-############################
-# App logs (with app tag from folder name)
-############################
-local.file_match "app_logs" {
+// Laravel Apps
+local.file_match "laravel_logs" {
   path_targets = [
     {
-      __path__ = "/var/www/*/publish/storage/logs/*.log"
-    }
+      __path__ = "/var/www/*/publish/storage/logs/*.log",
+    },
   ]
 }
 
-loki.process "app_logs" {
-  forward_to = [loki.write.local.receiver]
+loki.source.file "laravel" {
+  targets    = local.file_match.laravel_logs.targets
+  forward_to = [loki.process.pipeline.receiver]
+}
+
+loki.process "pipeline" {
+   stage.multiline {
+    firstline = "^\\[[0-9]{4}-[0-9]{2}-[0-9]{2}"
+  }
+  // ----------------------------
+  // Extract app name from path
+  // ----------------------------
+  stage.regex {
+    source= "filename"
+    expression = "/var/www/(?P<app>[^/]+)/.*"
+  }
 
   stage.regex {
-    expression = "/var/www/(?P<app>[^/]+)/publish/storage/logs/.*\\.log"
-  }
+   expression = "^\\[(?P<timestamp>[^\\]]+)\\] (?P<env>[^.]+)\\.(?P<level>\\w+): (?P<message>.*)"
+}
 
+ stage.template {
+  source = "level"
+  template = "{{ ToLower .Value }}"
+}
+  // ----------------------------
+  // Add labels to Loki
+  // ----------------------------
   stage.labels {
     values = {
-      app = "app"
-      job = "applications"
+      app = "app",
+      job = "job",
+      level = "level",
+      env   = "env",
+      service_name = "app",
     }
   }
+  stage.timestamp {
+  source = "timestamp"
+  format = "2006-01-02 15:04:05"
+  location = "Local"
+  }
+
+ forward_to = [loki.write.local.receiver]
 }
 
-loki.source.file "app_logs_source" {
-  targets    = local.file_match.app_logs.targets
-  forward_to = [loki.process.app_logs.receiver]
-}
-
-############################
-# System logs
-############################
+// System logs
 local.file_match "system_logs" {
   path_targets = [
     {
-      __path__ = "/var/log/*.log"
-    }
+      __path__ = "/var/log/*.log",
+      labels = {
+        job = "system",
+      },
+    },
   ]
 }
 
-loki.source.file "system_logs" {
+loki.source.file "system" {
   targets    = local.file_match.system_logs.targets
   forward_to = [loki.write.local.receiver]
-
-  labels = {
-    job = "system"
-  }
 }
 
-############################
-# Loki output
-############################
 loki.write "local" {
   endpoint {
     url = "http://loki:3100/loki/api/v1/push"
